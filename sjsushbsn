@@ -1,158 +1,101 @@
-    local enabled = false
-local interval = 0.07 -- Interval set to 0.07 seconds (70 milliseconds)
-local minInterval = 0.07 -- Minimum interval set to 0.07 seconds (70 milliseconds)
-local maxInterval = 0.07 -- Maximum interval set to 0.07 seconds (70 milliseconds)
-local anchoredDuration = 0.4 -- Duration for which player is anchored in seconds (0.40 seconds)
+    local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
 
-local guiMinimized = false
-local guiPosition = UDim2.new(0.5, -100, 0.5, -65) -- Initial position
-local minimizedPosition = UDim2.new(0.95, -200, 0.95, -35) -- Minimized position
-local minimizedSize = UDim2.new(0, 200, 0, 30) -- Minimized size
-
--- Function to toggle anchoring with delay to simulate high ping
-local function toggleAnchoring()
-    local character = game.Players.LocalPlayer.Character
-    if character then
-        local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-        if humanoidRootPart then
-            humanoidRootPart.Anchored = true -- Anchor the character
-            wait(anchoredDuration) -- Wait for anchoredDuration seconds
-            humanoidRootPart.Anchored = false -- Unanchor the character
-        end
-    end
-end
-
--- Create GUI for enabling/disabling
+-- === GUI Setup ===
 local gui = Instance.new("ScreenGui")
-gui.IgnoreGuiInset = true -- Ensures GUI works correctly on mobile
+gui.Name = "EgorToggle"
+gui.ResetOnSpawn = false
+gui.Parent = playerGui
 
--- For compatibility with executors, parent the GUI to the game's "CoreGui" service
-local coreGuiService = game:GetService("CoreGui")
-local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 200, 0, 130)
-frame.Position = guiPosition
-frame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-frame.BorderSizePixel = 2
-frame.BorderColor3 = Color3.fromRGB(100, 100, 100)
-frame.Active = true -- Necessary for mobile drag support
-frame.Parent = gui
-gui.Parent = coreGuiService
+local button = Instance.new("TextButton")
+button.Size = UDim2.new(0, 130, 0, 40)
+button.Position = UDim2.new(0, 10, 1, -60)
+button.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+button.TextColor3 = Color3.new(1, 1, 1)
+button.TextSize = 20
+button.Font = Enum.Font.SourceSansBold
+button.Text = "假延迟: 关"
+button.Parent = gui
 
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, -40, 0, 30)
-title.Position = UDim2.new(0, 40, 0, 0)
-title.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
-title.TextColor3 = Color3.new(1, 1, 1)
-title.Font = Enum.Font.SourceSansBold
-title.TextSize = 18
-title.Text = "Fake Lag Gui"
-title.Parent = frame
+-- === State Variables ===
+local egorEnabled = false
+local runAnimId = "rbxassetid://913376220" -- Roblox default run
+local runTrack = nil
+local runConnection = nil
 
-local minimizeButton = Instance.new("TextButton")
-minimizeButton.Size = UDim2.new(0, 35, 0, 30)
-minimizeButton.Position = UDim2.new(0, 5, 0, 0)
-minimizeButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
-minimizeButton.TextColor3 = Color3.new(1, 1, 1)
-minimizeButton.Text = "-"
-minimizeButton.Parent = frame
+-- === Setup Run Animation ===
+local function playRunAnimation(humanoid)
+	local animator = humanoid:FindFirstChildWhichIsA("Animator")
+	if not animator then
+		animator = Instance.new("Animator", humanoid)
+	end
 
-local closeButton = Instance.new("TextButton")
-closeButton.Size = UDim2.new(0, 35, 0, 30)
-closeButton.Position = UDim2.new(1, -35, 0, 0)
-closeButton.BackgroundColor3 = Color3.fromRGB(255, 70, 70)
-closeButton.TextColor3 = Color3.new(1, 1, 1)
-closeButton.Text = "X"
-closeButton.Parent = frame
+	local runAnim = Instance.new("Animation")
+	runAnim.AnimationId = runAnimId
+	runTrack = animator:LoadAnimation(runAnim)
+	runTrack.Priority = Enum.AnimationPriority.Movement
+	runTrack:AdjustSpeed(6)
+	runTrack:Play()
 
-local enableButton = Instance.new("TextButton")
-enableButton.Size = UDim2.new(0, 80, 0, 30)
-enableButton.Position = UDim2.new(0.5, -90, 0.5, 20)
-enableButton.BackgroundColor3 = Color3.fromRGB(70, 70, 255)
-enableButton.TextColor3 = Color3.new(1, 1, 1)
-enableButton.Text = "Enable"
-enableButton.Parent = frame
-
-local disableButton = Instance.new("TextButton")
-disableButton.Size = UDim2.new(0, 80, 0, 30)
-disableButton.Position = UDim2.new(0.5, 10, 0.5, 20)
-disableButton.BackgroundColor3 = Color3.fromRGB(255, 70, 70)
-disableButton.TextColor3 = Color3.new(1, 1, 1)
-disableButton.Text = "Disable"
-disableButton.Parent = frame
-
--- Function to generate random interval between minInterval and maxInterval
-local function getRandomInterval()
-    return math.random() * (maxInterval - minInterval) + minInterval
+	runConnection = game:GetService("RunService").RenderStepped:Connect(function()
+		if humanoid.MoveDirection.Magnitude == 0 then
+			if runTrack.IsPlaying then runTrack:Stop() end
+		else
+			if not runTrack.IsPlaying then
+				runTrack:Play()
+				runTrack:AdjustSpeed(6)
+			end
+		end
+	end)
 end
 
--- Mobile support for draggable frame
-local inputService = game:GetService("UserInputService")
-local dragging
-local dragInput
-local dragStart
-local startPos
-
-if inputService.TouchEnabled then
-    frame.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startPos = frame.Position
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
-            end)
-        end
-    end)
-
-    frame.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.Touch and dragging then
-            dragInput = input
-            local delta = dragInput.Position - dragStart
-            frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-        end
-    end)
+local function stopRunAnimation()
+	if runTrack then runTrack:Stop() end
+	if runConnection then runConnection:Disconnect() end
 end
 
--- Minimize button functionality
-local function toggleMinimize()
-    if guiMinimized then
-        -- Restore frame to original size and position
-        guiMinimized = false
-        frame:TweenSizeAndPosition(UDim2.new(0, 200, 0, 130), guiPosition, Enum.EasingDirection.Out, Enum.EasingStyle.Quart, 0.5, true)
-        minimizeButton.Text = "-"
-        enableButton.Visible = true
-        disableButton.Visible = true
-    else
-        -- Minimize frame
-        guiMinimized = true
-        frame:TweenSizeAndPosition(minimizedSize, minimizedPosition, Enum.EasingDirection.Out, Enum.EasingStyle.Quart, 0.5, true)
-        minimizeButton.Text = "+"
-        enableButton.Visible = false
-        disableButton.Visible = false
-    end
+-- === Toggle Egor Mode ===
+local function enableEgor()
+	local char = player.Character
+	if not char then return end
+	local humanoid = char:FindFirstChild("Humanoid")
+	if not humanoid then return end
+
+	humanoid.WalkSpeed = 3
+	playRunAnimation(humanoid)
+	button.Text = "假延迟: 开"
 end
 
-minimizeButton.MouseButton1Click:Connect(toggleMinimize)
+local function disableEgor()
+	local char = player.Character
+	if not char then return end
+	local humanoid = char:FindFirstChild("Humanoid")
+	if not humanoid then return end
 
--- Close button functionality
-closeButton.MouseButton1Click:Connect(function()
-    gui:Destroy() -- Destroy the GUI when close button is clicked
+	humanoid.WalkSpeed = 16
+	stopRunAnimation()
+	button.Text = "假延迟: 关"
+end
+
+-- === Button Toggle ===
+button.MouseButton1Click:Connect(function()
+	egorEnabled = not egorEnabled
+	if egorEnabled then enableEgor() else disableEgor() end
 end)
 
-enableButton.MouseButton1Click:Connect(function()
-    enabled = true
-end)
+-- === On Character Spawn ===
+local function onCharacterAdded(char)
+	local humanoid = char:WaitForChild("Humanoid")
+	char:WaitForChild("Animate") -- Keep default animations like jump
+	task.wait(0.5)
 
-disableButton.MouseButton1Click:Connect(function()
-    enabled = false
-end)
-
--- Main loop to toggle anchoring with 0.07 second interval
-while true do
-    if enabled then
-        toggleAnchoring()
-    end
-    wait(interval)
+	if egorEnabled then
+		enableEgor()
+	else
+		disableEgor()
+	end
 end
+
+if player.Character then onCharacterAdded(player.Character) end
+player.CharacterAdded:Connect(onCharacterAdded)
